@@ -1,17 +1,23 @@
 <template>
     <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
+        <div v-if="spinner" class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center">
+            <svg class="animate-spin -ml-1 mr-3 h-12 w-12 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
         <div class="container">
-            <div class="w-full my-4"></div>
             <section>
                 <div class="flex">
                     <div class="max-w-xs">
-                        <label for="wallet" class="block text-sm font-medium text-gray-700"
-                        >Тикер {{ ticker }}</label
-                        >
+                        <label for="wallet" class="block text-sm font-medium text-gray-700">
+                            Тикер {{ ticker }}
+                        </label>
                         <div class="mt-1 relative rounded-md shadow-md">
                             <input
                                     v-model="ticker"
                                     v-on:keydown.enter="add"
+                                    v-on:input="inputChange"
                                     type="text"
                                     name="wallet"
                                     id="wallet"
@@ -19,10 +25,21 @@
                                     placeholder="Например DOGE"
                             />
                         </div>
+
+                        <div v-if="showPrompt" class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
+                             <span v-for="item in cryptoMarketPromptArray" :key="item.name" class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
+                               {{ item.name }}
+                             </span>
+                        </div>
+
+                        <div v-if="addError" class="text-sm text-red-600">{{ addErrorMessage}}</div>
+
                     </div>
+
+
                 </div>
                 <button
-                        @click="add"
+                        @click.stop="add"
                         type="button"
                         class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                 >
@@ -46,9 +63,29 @@
             <!--<template>-->
             <template v-if="tickers.length">
                 <hr class="w-full border-t border-gray-600 my-4" />
+                <div>
+                    <button
+                            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                            v-if="page > 1"
+                            @click = "page = page - 1"
+                    >
+                        Назад
+                    </button>
+                    <button
+                            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                            v-if="hasNextPage"
+                            @click = "page = page + 1"
+                    >
+                        Вперёд
+                    </button>
+                    <div>
+                        Фильтрация: <input v-model="filter"/>
+                    </div>
+                </div>
+                <hr class="w-full border-t border-gray-600 my-4" />
                 <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
                     <div
-                          v-for="t in tickers"
+                          v-for="t in filteredTickers()"
                           :key="t.name"
                           @click = "select(t)"
                           :class = "{
@@ -142,35 +179,109 @@ export default {
       return {
           ticker : '',
           tickers : [],
+          cryptoMarketPromptArray : [
+              { name: 'BTC' },
+              { name: 'DOGE' },
+              { name: 'BCH' },
+              { name: 'XCH' },
+          ],
           sel : null,
-          graph : []
+          graph : [],
+          allCoins : [],
+          addErrorMessage : 'Такой тикер уже добавлен',
+          spinner: true,
+          addError : false,
+          showPrompt: false,
+          count: 0,
+          page: 1,
+          filter: "",
+          hasNextPage: true,
       };
   },
 
   methods: {
-      add() {
-          const currentTicker = { name : this.ticker, price : '777' };
-          this.tickers.push(currentTicker);
 
+      filteredTickers() {
+           const start = (this.page - 1) * 6;
+           const end = this.page * 6;
+           const filteredTickers =  this.tickers.filter(ticker => ticker.name.includes(this.filter));
+
+           this.hasNextPage = filteredTickers.length > end;
+           return filteredTickers.slice(start, end);
+      },
+
+      subscribeToUpdates(tickerName) {
           setInterval(async () => {
               const f = await fetch(
-                  `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=7e780cc04c7965089973dd1cfb637a5ee5b0e6c7662be74b394ff117c024ea44`
+                  `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=7e780cc04c7965089973dd1cfb637a5ee5b0e6c7662be74b394ff117c024ea44`
               );
               const data = await f.json();
               console.log(data);
-              this.tickers.find(t => t.name === currentTicker.name).price =
+              this.tickers.find(t => t.name === tickerName).price =
                   data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
 
-              if(this.sel?.name === currentTicker.name) {
+              if(this.sel?.name === tickerName) {
                   this.graph.push(data.USD);
               }
           }, 3000);
+      },
+
+      add() {
+          const currentTicker = { name : this.ticker, price : '777' };
+          this.addError = false;
+
+          if(this.tickers.findIndex(t => t.name === currentTicker.name) !== -1) {
+
+              this.addError = true;
+
+              return;
+
+          } else {
+              this.tickers.push(currentTicker);
+              this.showPrompt = false;
+
+              localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers));
+              this.subscribeToUpdates(currentTicker.name);
+
+          }
 
           this.ticker = '';
+          this.filter = '';
+      },
+
+      inputChange() {
+          this.addError = false;
+
+          this.showPrompt = true;
+
+          let offset = 0;
+
+          for(let i = 0; i <= 3; i++) {
+              offset = this.getSymbolForPrompt(offset, i);
+          }
+
+      },
+
+      getSymbolForPrompt(offset, pos) {
+
+          for(let i = offset+1; i < this.allCoins.length; i++) {
+
+              if(this.allCoins[i].includes(this.ticker.toUpperCase(), 0)) {
+                  console.log('Get Symbol For Prompt : ' + this.allCoins[i]);
+
+                  this.cryptoMarketPromptArray[pos] = { name: this.allCoins[i] };
+                  return i;
+              }
+
+          }
+
+          return offset;
+
       },
 
       handleDelete(tickerToRemove) {
          this.tickers = this.tickers.filter(t => t !== tickerToRemove);
+          localStorage.setItem('cryptonomicon-list', JSON.stringify(this.tickers));
       },
 
       normalizeGraph() {
@@ -185,8 +296,75 @@ export default {
       select(ticker) {
           this.sel = ticker;
           this.graph = [];
+      },
+
+      async loadAllCoins() {
+          const f =  await fetch(
+              `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`
+          );
+
+          const coinlist = await f.json();
+          this.allCoins = await this.getAllSymbols(coinlist);
+
+          //console.log(this.allCoins['BTC']);
+          this.spinner = false;
+
+      },
+
+      getAllSymbols(coinlist) {
+          let result = [];
+
+          for(let coin in coinlist.Data) {
+             // result[coinlist.Data[coin].Symbol] = coinlist.Data[coin].Symbol;
+              result.push(coinlist.Data[coin].Symbol);
+          }
+
+          return result;
       }
-  }
+
+  },
+
+  created() {
+
+      const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
+
+      if(windowData.filter) {
+          this.filter = windowData.filter;
+      }
+
+      if(windowData.page) {
+          this.page = windowData.page;
+      }
+
+      const tickersData = localStorage.getItem('cryptonomicon-list');
+
+      if(tickersData) {
+          this.tickers = JSON.parse(tickersData);
+          this.tickers.forEach(ticker => {
+             this.subscribeToUpdates(ticker.name);
+          });
+      }
+  },
+
+    mounted: function () {
+         this.loadAllCoins();
+  },
+
+  watch: {
+      filter() {
+          this.page = 1;
+
+          window.history.pushState(
+            null, document.title,`${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+          );
+      },
+
+      page() {
+          window.history.pushState(
+              null, document.title,`${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+          );
+      }
+  },
 
 }
 
